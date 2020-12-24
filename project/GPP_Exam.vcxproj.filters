@@ -3,9 +3,16 @@
   <ItemGroup>
     <ClCompile Include="Plugin.cpp" />
     <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="Steering\SteeringBehaviors.cpp" />
+    <ClCompile Include="DecisionMaking\EBehaviourTree.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Plugin.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="Steering\SteeringBehaviors.h" />
+    <ClInclude Include="DecisionMaking\EDecisionMaking.h" />
+    <ClInclude Include="DecisionMaking\Behaviours.h" />
+    <ClInclude Include="DecisionMaking\EBlackboard.h" />
+    <ClInclude Include="DecisionMaking\EBehaviourTree.h" />
   </ItemGroup>
 </Project>

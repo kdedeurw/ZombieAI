@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "Plugin.h"
 #include "IExamInterface.h"
+#include "DecisionMaking/EBehaviourTree.h"
+#include "DecisionMaking/Behaviours.h"
 
 //Called only once, during initialization
 void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
@@ -15,6 +17,108 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 	info.Student_FirstName = "Kristof";
 	info.Student_LastName = "Dedeurwaerder";
 	info.Student_Class = "2DAE01";
+
+	Blackboard* pBlackboard = new Blackboard{};
+	pBlackboard->AddData("Interface", m_pInterface);
+	pBlackboard->AddData("Steering", SteeringPlugin_Output{});
+	pBlackboard->AddData("Target", Elite::Vector2{});
+	pBlackboard->AddData("CurrentSlot", UINT{});
+
+	m_pBehaviourTree = new BehaviorTree{ pBlackboard,
+	//DO any of the following states
+	new BehaviorSelector
+	{
+		{
+			//OR DO CHECK fight/flight
+			new BehaviorSequence
+			{
+				{
+					//IF in danger ELSE continue
+					new BehaviorConditional{ IsInDanger },
+					//DO either FIGHT when (in danger)
+					new BehaviorSelector
+					{
+						{
+							//AND has weapon AND has ammo DO use item
+							new BehaviorSequence
+							{
+								{
+									new BehaviorConditional{ HasWeapon },
+									new BehaviorConditional{ HasAmmo },
+									//new BehaviorAction{ AimWeapon },
+									new BehaviorAction{ UseItem },
+								}
+							},
+							//OR DO flight WHEN (in danger)
+							//AND has no weapon (OR has no ammo) DO flee
+							new BehaviorAction{ ChangeToFlee },
+							new BehaviorSelector
+							{
+								{
+									//OR IF tired
+									new BehaviorConditional{ IsTired },
+									//OR IF NOT tired DO run
+									new BehaviorAction{ EnableRunning },
+								}
+							}
+						}
+					},
+				}
+			},
+
+			//(IF NOT in danger)
+			new BehaviorSelector
+			{
+				{
+					//OR IF hurt DO use medkit
+					new BehaviorSequence
+					{
+						{
+							new BehaviorSequence
+							{
+								{
+									//IF
+									new BehaviorSelector
+										{
+											{
+												//hurt OR bitten
+												new BehaviorConditional{ IsHurt },
+												new BehaviorConditional{ IsBitten }
+											}
+										}
+								}
+							},
+							//AND has medkit
+							new BehaviorConditional{ HasMedkit },
+							//DO use medkit
+							new BehaviorAction{ UseItem },
+						}
+					},
+					//OR IF hungry DO use food
+					new BehaviorSequence
+					{
+						{
+							new BehaviorConditional{ IsHungry },
+							new BehaviorConditional{ HasFood },
+							new BehaviorAction{ UseItem },
+						}
+					},
+					//OR IF tired DO rest
+					new BehaviorSequence
+					{
+						{
+							new BehaviorConditional{ IsTired },
+							new BehaviorAction{ ChangeToRest },
+						}
+					},
+				}
+			},
+
+			//OR DO wander
+			new BehaviorAction{ ChangeToWander }
+		}
+	}
+	}; //end of BT initialization
 }
 
 //Called only once
@@ -27,6 +131,7 @@ void Plugin::DllInit()
 void Plugin::DllShutdown()
 {
 	//Called wheb the plugin gets unloaded
+	SAFE_DELETE(m_pBehaviourTree);
 }
 
 //Called only once, during initialization
@@ -38,6 +143,7 @@ void Plugin::InitGameDebugParams(GameDebugParams& params)
 	params.EnemyCount = 20; //How many enemies? (Default = 20)
 	params.GodMode = false; //GodMode > You can't die, can be usefull to inspect certain behaviours (Default = false)
 	params.AutoGrabClosestItem = true; //A call to Item_Grab(...) returns the closest item that can be grabbed. (EntityInfo argument is ignored)
+	//params.StartingDifficultyStage = 3;
 }
 
 //Only Active in DEBUG Mode
@@ -82,14 +188,19 @@ void Plugin::Update(float dt)
 		m_CanRun = false;
 	}
 
-	CheckEntitiesInFOV();
+	//CheckEntitiesInFOV();
+	m_pBehaviourTree->Update(dt);
 }
 
 //Update
 //This function calculates the new SteeringOutput, called once per frame
 SteeringPlugin_Output Plugin::UpdateSteering(float dt)
 {
-	auto steering = SteeringPlugin_Output();
+	SteeringPlugin_Output steering;
+	if (!m_pBehaviourTree->GetBlackboard()->GetData("Steering", steering))
+		steering = SteeringPlugin_Output{};
+
+	return steering;
 
 	//Use the Interface (IAssignmentInterface) to 'interface' with the AI_Framework
 	auto agentInfo = m_pInterface->Agent_GetInfo();
@@ -171,7 +282,7 @@ void Plugin::Render(float dt) const
 	//This Render function should only contain calls to Interface->Draw_... functions
 	m_pInterface->Draw_SolidCircle(m_Target, .7f, { 0,0 }, { 1, 0, 0 });
 
-	RenderEntitiesInFOV();
+	//RenderEntitiesInFOV();
 }
 
 vector<HouseInfo> Plugin::GetHousesInFOV() const

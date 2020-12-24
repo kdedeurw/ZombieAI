@@ -4,6 +4,10 @@
 
 class IBaseInterface;
 class IExamInterface;
+namespace Elite
+{
+	class BehaviorTree;
+}
 
 class Plugin :public IExamPlugin
 {
@@ -42,6 +46,8 @@ private:
 	std::vector<ItemInfo> itemInfos{};
 	std::vector<EnemyInfo> enemyInfos{};
 	std::vector<PurgeZoneInfo> purgeZoneInfos{};
+
+	Elite::BehaviorTree* m_pBehaviourTree{};
 };
 
 //ENTRY
