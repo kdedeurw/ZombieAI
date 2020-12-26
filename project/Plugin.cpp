@@ -1,8 +1,11 @@
 #include "stdafx.h"
 #include "Plugin.h"
 #include "IExamInterface.h"
+//#include "DecisionMaking/EBlackboard.h"
 #include "DecisionMaking/EBehaviourTree.h"
 #include "DecisionMaking/Behaviours.h"
+
+using namespace Elite;
 
 //Called only once, during initialization
 void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
@@ -21,103 +24,143 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 	Blackboard* pBlackboard = new Blackboard{};
 	pBlackboard->AddData("Interface", m_pInterface);
 	pBlackboard->AddData("Steering", SteeringPlugin_Output{});
-	pBlackboard->AddData("Target", Elite::Vector2{});
+	pBlackboard->AddData("TargetEntity", EntityInfo{});
+	pBlackboard->AddData("TargetHouse", HouseInfo{});
+	pBlackboard->AddData("FreeSlots", UINT{}); //memory optimisation isn't possible since padding will happen and we're not storing the values
 	pBlackboard->AddData("CurrentSlot", UINT{});
+	pBlackboard->AddData("HousesInFOV", std::vector<HouseInfo>{});
+	pBlackboard->AddData("EntitiesInFOV", std::vector<EntityInfo>{});
+	pBlackboard->AddData("AngleToTarget", float{}); //in degrees
 
 	m_pBehaviourTree = new BehaviorTree{ pBlackboard,
-	//DO any of the following states
 	new BehaviorSelector
-	{
-		{
-			//OR DO CHECK fight/flight
+	{{
+		//CHOOSE OR > GLOBAL
+		new BehaviorSelector
+		{{
+			//CHOOSE OR > IF found entity
 			new BehaviorSequence
-			{
-				{
-					//IF in danger ELSE continue
-					new BehaviorConditional{ IsInDanger },
-					//DO either FIGHT when (in danger)
+			{{
+				//IF found entity
+				new BehaviorConditional{ HasFoundEntityTargetInFOV },
+
+				//CHOOSE OR > DO CHECK fight/flight pickup item
+				new BehaviorSelector
+				{{
+					//CHOOSE OR > IF enemy
 					new BehaviorSelector
-					{
-						{
-							//AND has weapon AND has ammo DO use item
-							new BehaviorSequence
-							{
-								{
-									new BehaviorConditional{ HasWeapon },
-									new BehaviorConditional{ HasAmmo },
-									//new BehaviorAction{ AimWeapon },
-									new BehaviorAction{ UseItem },
-								}
-							},
-							//OR DO flight WHEN (in danger)
-							//AND has no weapon (OR has no ammo) DO flee
-							new BehaviorAction{ ChangeToFlee },
+					{{
+						//IF entity is enemy
+						new BehaviorSequence
+						{{
+							new BehaviorConditional{ IsEnemyTargetInFOV },
+							//CHOOSE OR > check and shoot or rotate
 							new BehaviorSelector
-							{
-								{
-									//OR IF tired
-									new BehaviorConditional{ IsTired },
-									//OR IF NOT tired DO run
-									new BehaviorAction{ EnableRunning },
-								}
-							}
-						}
-					},
-				}
-			},
+							{{
+								//IF enemy visible AND has weapon AND has ammo AND if aiming DO shoot
+								new BehaviorSequence
+								{{
+									//AND IF has weapon
+									new BehaviorConditional{ HasWeaponInInventory },
+									//AND IF has ammo
+									new BehaviorConditional{ HasAmmoInCurrentWeapon },
+									//AND
+									new BehaviorSequence
+									{{
+										//IF aiming at target
+										//new BehaviorConditional{ IsAimingAtTarget },
+										//DO shoot pistol
+										//new BehaviorAction{ UseItem },
+									}}
+								}},
+								//(ELSE) DO rotate
+								new BehaviorAction{ RotateTowardsTargetInFOV },
+							}}
+						}}
+					}},
 
-			//(IF NOT in danger)
-			new BehaviorSelector
-			{
-				{
-					//OR IF hurt DO use medkit
-					new BehaviorSequence
-					{
-						{
-							new BehaviorSequence
-							{
-								{
-									//IF
-									new BehaviorSelector
-										{
-											{
-												//hurt OR bitten
-												new BehaviorConditional{ IsHurt },
-												new BehaviorConditional{ IsBitten }
-											}
-										}
-								}
-							},
-							//AND has medkit
-							new BehaviorConditional{ HasMedkit },
-							//DO use medkit
-							new BehaviorAction{ UseItem },
-						}
-					},
-					//OR IF hungry DO use food
-					new BehaviorSequence
-					{
-						{
-							new BehaviorConditional{ IsHungry },
-							new BehaviorConditional{ HasFood },
-							new BehaviorAction{ UseItem },
-						}
-					},
-					//OR IF tired DO rest
-					new BehaviorSequence
-					{
-						{
-							new BehaviorConditional{ IsTired },
-							new BehaviorAction{ ChangeToRest },
-						}
-					},
-				}
-			},
+					//OR > DO flee (AND has no weapon (OR has no ammo)))
+					//new BehaviorSequence
+					//{{
+					//	//DO flee
+					//	new BehaviorAction{ ChangeToFlee },
+					//	//AND IF tired OR DO run
+					//	new BehaviorSelector
+					//	{{
+					//		//OR IF tired
+					//		new BehaviorConditional{ IsTired },
+					//		//OR (IF NOT tired) DO run
+					//		new BehaviorAction{ EnableRunning },
+					//	}}
+					//}},
 
-			//OR DO wander
-			new BehaviorAction{ ChangeToWander }
-		}
-	}
+					//OR > IF found item DO seek item
+					new BehaviorSequence
+					{{
+						//IF has found item
+						new BehaviorConditional{ IsItemTargetInFOV },
+						//DO seek item
+						new BehaviorAction{ ChangeToSeekCurrentTarget },
+						//AND DO pickup item
+						new BehaviorAction{ PickUpItem },
+					}}
+				}}
+			}}
+		}},
+
+		//OR > IF NO entities found
+		new BehaviorSelector
+		{{
+			//CHOOSE OR > IF hurt OR bitten AND has medkit DO use medkit
+			new BehaviorSequence
+			{{
+				//AND IF hurt OR bitten
+				new BehaviorSequence
+				{{
+					//OR > IF hurt OR bitten
+					new BehaviorSelector
+					{{
+						new BehaviorConditional{ IsHurt },
+						new BehaviorConditional{ IsBitten }
+					}}
+				}},
+				//AND has medkit
+				new BehaviorConditional{ HasMedkitInInventory },
+				//DO use medkit
+				new BehaviorAction{ UseItem },
+			}},
+			//OR > IF hungry AND has food DO use food
+			new BehaviorSequence
+			{{
+				new BehaviorConditional{ IsHungry },
+				new BehaviorConditional{ HasFoodInInventory },
+				new BehaviorAction{ UseItem },
+			}},
+			//OR > IF tired DO rest
+			new BehaviorSequence
+			{{
+				new BehaviorConditional{ IsTired },
+				new BehaviorAction{ ChangeToRest },
+			}},
+		}},
+
+		//OR > IF house found DO explore
+		//new BehaviorSequence
+		//{{
+		//	//IF found house
+		//	new BehaviorConditional{ HasFoundHouseTargetInFOV },
+		//	//AND 
+		//	//new BehaviorConditional{  },
+		//	//DO explore
+		//	new BehaviorAction{ ChangeToExploreHouseInFOV },
+		//}},
+
+		//OR > DO seek (DEBUG)
+		new BehaviorAction{ ChangeToSeekCurrentTarget },
+
+		//OR > DO wander
+		//new BehaviorAction{ ChangeToWander }
+	}}
 	}; //end of BT initialization
 }
 
@@ -143,7 +186,9 @@ void Plugin::InitGameDebugParams(GameDebugParams& params)
 	params.EnemyCount = 20; //How many enemies? (Default = 20)
 	params.GodMode = false; //GodMode > You can't die, can be usefull to inspect certain behaviours (Default = false)
 	params.AutoGrabClosestItem = true; //A call to Item_Grab(...) returns the closest item that can be grabbed. (EntityInfo argument is ignored)
+	
 	//params.StartingDifficultyStage = 3;
+	params.SpawnDebugPistol = true;
 }
 
 //Only Active in DEBUG Mode
@@ -188,39 +233,6 @@ void Plugin::Update(float dt)
 		m_CanRun = false;
 	}
 
-	//CheckEntitiesInFOV();
-	m_pBehaviourTree->Update(dt);
-}
-
-//Update
-//This function calculates the new SteeringOutput, called once per frame
-SteeringPlugin_Output Plugin::UpdateSteering(float dt)
-{
-	SteeringPlugin_Output steering;
-	if (!m_pBehaviourTree->GetBlackboard()->GetData("Steering", steering))
-		steering = SteeringPlugin_Output{};
-
-	return steering;
-
-	//Use the Interface (IAssignmentInterface) to 'interface' with the AI_Framework
-	auto agentInfo = m_pInterface->Agent_GetInfo();
-
-	auto nextTargetPos = m_Target; //To start you can use the mouse position as guidance
-
-	auto vHousesInFOV = GetHousesInFOV();//uses m_pInterface->Fov_GetHouseByIndex(...)
-	auto vEntitiesInFOV = GetEntitiesInFOV(); //uses m_pInterface->Fov_GetEntityByIndex(...)
-
-	for (auto& e : vEntitiesInFOV)
-	{
-		if (e.Type == eEntityType::PURGEZONE)
-		{
-			PurgeZoneInfo zoneInfo;
-			m_pInterface->PurgeZone_GetInfo(e, zoneInfo);
-			std::cout << "Purge Zone in FOV:" << e.Location.x << ", "<< e.Location.y <<  " ---EntityHash: " << e.EntityHash << "---Radius: "<< zoneInfo.Radius << std::endl;
-		}
-	}
-	
-
 	//INVENTORY USAGE DEMO
 	//********************
 
@@ -251,27 +263,36 @@ SteeringPlugin_Output Plugin::UpdateSteering(float dt)
 		m_pInterface->Inventory_RemoveItem(0);
 	}
 
-	//Simple Seek Behaviour (towards Target)
-	steering.LinearVelocity = nextTargetPos - agentInfo.Position; //Desired Velocity
-	steering.LinearVelocity.Normalize(); //Normalize Desired Velocity
-	steering.LinearVelocity *= agentInfo.MaxLinearSpeed; //Rescale to Max Speed
-
-	if (Distance(nextTargetPos, agentInfo.Position) < 2.f)
-	{
-		steering.LinearVelocity = Elite::ZeroVector2;
-	}
-
-	//steering.AngularVelocity = m_AngSpeed; //Rotate your character to inspect the world while walking
-	steering.AutoOrient = true; //Setting AutoOrientate to TRue overrides the AngularVelocity
-
-	steering.RunMode = m_CanRun; //If RunMode is True > MaxLinSpd is increased for a limited time (till your stamina runs out)
-
-								 //SteeringPlugin_Output is works the exact same way a SteeringBehaviour output
-
-								 //@End (Demo Purposes)
 	m_GrabItem = false; //Reset State
 	m_UseItem = false;
 	m_RemoveItem = false;
+
+	//CheckEntitiesInFOV();
+
+	EntityInfo test{};
+	test.Location = m_Target;
+	m_pBehaviourTree->GetBlackboard()->ChangeData("TargetEntity", test);
+}
+
+//Update
+//This function calculates the new SteeringOutput, called once per frame
+SteeringPlugin_Output Plugin::UpdateSteering(float dt)
+{
+	//Regular update
+	//--------------
+
+	//Update blackboard (to be used in BT and steering)
+	Elite::Blackboard* pBlackboard = m_pBehaviourTree->GetBlackboard();
+	pBlackboard->ChangeData("HousesInFOV", GetHousesInFOV()); //uses m_pInterface->Fov_GetHouseByIndex(...)
+	pBlackboard->ChangeData("EntitiesInFOV", GetEntitiesInFOV()); //uses m_pInterface->Fov_GetEntityByIndex(...)
+
+	//Update BT (to set steering)
+	m_pBehaviourTree->Update(dt);
+
+	//Set final steering
+	SteeringPlugin_Output steering; //autoOrient is default set to true
+	if (!m_pBehaviourTree->GetBlackboard()->GetData("Steering", steering))
+		steering = SteeringPlugin_Output{};
 
 	return steering;
 }

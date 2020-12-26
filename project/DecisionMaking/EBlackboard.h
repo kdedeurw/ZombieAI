@@ -96,6 +96,28 @@ namespace Elite
 			return false;
 		}
 
+		//Custom: Get a ptr to data from the blackboard (ptr obj seems to break in range-based for-loops)
+		template<typename T> bool GetDataPtr(const std::string& name, T* &pPtr)
+		{
+			if (m_BlackboardData[name])
+			{
+				//pPtr now points to adres of data from BlackboardField<T>*
+				pPtr = &dynamic_cast<BlackboardField<T>*>(m_BlackboardData[name])->GetData();
+				return true;
+			}
+
+			//TODO: return T* upon success or nullptr upon fail?
+
+			//BlackboardField<T>* p = dynamic_cast<BlackboardField<T>*>(m_BlackboardData[name]);
+			//if (p != nullptr)
+			//{
+			//	data = p->GetData();
+			//	return true;
+			//}
+			printf("WARNING: Data '%s' of type '%s' not found in Blackboard \n", name.c_str(), typeid(T).name());
+			return false;
+		}
+
 	private:
 		std::unordered_map<std::string, IBlackBoardField*> m_BlackboardData;
 	};

@@ -5,6 +5,7 @@
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="Steering\SteeringBehaviors.cpp" />
     <ClCompile Include="DecisionMaking\EBehaviourTree.cpp" />
+    <ClCompile Include="DecisionMaking\Behaviours.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Plugin.h" />

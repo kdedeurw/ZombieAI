@@ -9,9 +9,11 @@
 // Includes & Forward Declarations
 //-----------------------------------------------------------------
 #include <Exam_HelperStructs.h>
-#include "../DecisionMaking/EBlackboard.h"
-#include <EliteMath/EMath.h>
-using namespace Elite;
+struct AgentInfo;
+namespace Elite
+{
+	struct Vector2;
+}
 
 ///////////////////////////////////////
 //SEEK
@@ -22,7 +24,7 @@ SteeringPlugin_Output CalculateSeekSteering(const AgentInfo& agentInfo, const El
 //WANDER
 //******
 SteeringPlugin_Output CalculateWanderSteering(const AgentInfo& agentInfo, const Elite::Vector2& target = {}, float offset = 6.f, float radius = 4.f, float maxJitterOffset = 1.f);
-static Vector2 WanderTarget = {};
+static Elite::Vector2 WanderTarget = {};
 
 //////////////////////////
 //FLEE
@@ -37,7 +39,8 @@ SteeringPlugin_Output CalculateArriveSteering(const AgentInfo& agentInfo, const 
 //////////////////////////
 //FACE
 //******
-SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target);
+//returns the angle in between the two vectors
+SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float* angleToTarget = nullptr);
 
 //////////////////////////
 //EVADE

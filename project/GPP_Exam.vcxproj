@@ -191,6 +191,7 @@
     <ClInclude Include="Steering\SteeringBehaviors.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DecisionMaking\Behaviours.cpp" />
     <ClCompile Include="DecisionMaking\EBehaviourTree.cpp" />
     <ClCompile Include="Plugin.cpp" />
     <ClCompile Include="stdafx.cpp">

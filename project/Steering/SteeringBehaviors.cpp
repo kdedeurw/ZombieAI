@@ -3,6 +3,7 @@
 
 //Includes
 #include "SteeringBehaviors.h"
+//#include <EliteMath/EMath.h>
 
 //////////////////////////
 //SEEK
@@ -26,7 +27,7 @@ SteeringPlugin_Output CalculateWanderSteering(const AgentInfo& agentInfo, const 
 {
 	// calculate random point on circle
 	const float halfJitter = maxJitterOffset / 2;
-	const Elite::Vector2 randomOffset = Elite::Vector2{ randomFloat(-halfJitter, halfJitter), randomFloat(-halfJitter, halfJitter) };
+	const Elite::Vector2 randomOffset = Elite::Vector2{ Elite::randomFloat(-halfJitter, halfJitter), Elite::randomFloat(-halfJitter, halfJitter) };
 	// 'normalized' vector with length defined by halfJitter(==radius of circle?), should always point on a random point on the circle
 	WanderTarget += randomOffset;
 	WanderTarget.Normalize();
@@ -107,7 +108,7 @@ SteeringPlugin_Output CalculateArriveSteering(const AgentInfo& agentInfo, const 
 
 //FACE
 //******
-SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float* angleToTarget)
 {
 	SteeringPlugin_Output steering{};
 	steering.AutoOrient = false;
@@ -118,6 +119,8 @@ SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const El
 	agentToTargetDir.Normalize(); // normalize, obv.
 	const float angleBetween = Elite::Dot(agentLookAtDir, agentToTargetDir); // dot or angle between the 2 vectors (pos and neg results)
 	steering.AngularVelocity = agentInfo.MaxAngularSpeed * angleBetween; // speed * whatever signed amount we have
+
+	*angleToTarget = angleBetween;
 	
 	//DEBUGRENDERER2D->DrawDirection(pAgent->GetPosition(),
 	//	agentLookAtDir,
