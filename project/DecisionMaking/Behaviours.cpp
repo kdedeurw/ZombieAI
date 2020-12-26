@@ -144,47 +144,26 @@ BehaviorState UseItem(Elite::Blackboard* pBlackboard)
 	ItemInfo itemInfo;
 	pInterface->Inventory_GetItem(currentSlot, itemInfo);
 
-	UINT freeSlots;
-	if (!pBlackboard->GetData("FreeSlots", freeSlots))
-		return Failure;
-	std::bitset<5> bits{ freeSlots };
-
 	switch (itemInfo.Type)
 	{
 	case eItemType::PISTOL:
 		if (pInterface->Weapon_GetAmmo(itemInfo) <= 0)
-		{
-			bits[currentSlot] = 0;
-			if (!pInterface->Inventory_RemoveItem(currentSlot))
-				return Failure;
-		}
+			return RemoveItemFromInventory(currentSlot, pInterface, pBlackboard);
 		break;
 	case eItemType::MEDKIT:
 		if (pInterface->Medkit_GetHealth(itemInfo) <= 0)
-		{
-			bits[currentSlot] = 0;
-
-			if (!pInterface->Inventory_RemoveItem(currentSlot))
-				return Failure;
-		}
+			return RemoveItemFromInventory(currentSlot, pInterface, pBlackboard);
 		break;
 	case eItemType::FOOD:
 		if (pInterface->Food_GetEnergy(itemInfo) <= 0)
-		{
-			bits[currentSlot] = 0;
-			if (!pInterface->Inventory_RemoveItem(currentSlot))
-				return Failure;
-		}
+			return RemoveItemFromInventory(currentSlot, pInterface, pBlackboard);
 		break;
 	case eItemType::GARBAGE:
-		
+			return RemoveItemFromInventory(currentSlot, pInterface, pBlackboard);
 		break;
 	default:
 		break;
 	}
-
-	if (!pBlackboard->ChangeData("FreeSlots", (UINT)bits.to_ulong()))
-		return Failure;
 
 	return Success;
 }

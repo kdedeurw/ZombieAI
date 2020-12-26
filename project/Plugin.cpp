@@ -32,6 +32,9 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 	pBlackboard->AddData("EntitiesInFOV", std::vector<EntityInfo>{});
 	pBlackboard->AddData("AngleToTarget", float{}); //in degrees
 
+	Elite::BehaviorConditional* pIsAimingAtTarget = new BehaviorConditional{ IsAimingAtTarget };
+	Elite::BehaviorAction* pUseItem = new BehaviorAction{ UseItem };
+
 	m_pBehaviourTree = new BehaviorTree{ pBlackboard,
 	new BehaviorSelector
 	{{
@@ -64,17 +67,17 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 									new BehaviorConditional{ HasWeaponInInventory },
 									//AND IF has ammo
 									new BehaviorConditional{ HasAmmoInCurrentWeapon },
-									//AND
+									//DO rotate
+									new BehaviorAction{ RotateTowardsTargetInFOV },
+									//CHOOSE OR > IF aiming DO shoot
 									new BehaviorSequence
 									{{
 										//IF aiming at target
-										//new BehaviorConditional{ IsAimingAtTarget },
+										pIsAimingAtTarget,
 										//DO shoot pistol
-										//new BehaviorAction{ UseItem },
-									}}
+										pUseItem,
+									}},
 								}},
-								//(ELSE) DO rotate
-								new BehaviorAction{ RotateTowardsTargetInFOV },
 							}}
 						}}
 					}},
@@ -156,7 +159,7 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 		//}},
 
 		//OR > DO seek (DEBUG)
-		new BehaviorAction{ ChangeToSeekCurrentTarget },
+		//new BehaviorAction{ ChangeToSeekCurrentTarget },
 
 		//OR > DO wander
 		//new BehaviorAction{ ChangeToWander }
