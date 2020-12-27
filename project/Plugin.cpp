@@ -31,9 +31,110 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 	pBlackboard->AddData("HousesInFOV", std::vector<HouseInfo>{});
 	pBlackboard->AddData("EntitiesInFOV", std::vector<EntityInfo>{});
 	pBlackboard->AddData("AngleToTarget", float{}); //in degrees
+	pBlackboard->AddData("IsHouseExplored", bool{ true }); //don't try exploring a non-existing house at 0,0
+	pBlackboard->AddData("TryRunning", bool{});
+	pBlackboard->AddData("FormerHouseCenter", Elite::Vector2{ -1.f, -1.f }); //make sure former center != TargetHouse.center
 
-	Elite::BehaviorConditional* pIsAimingAtTarget = new BehaviorConditional{ IsAimingAtTarget };
-	Elite::BehaviorAction* pUseItem = new BehaviorAction{ UseItem };
+	//To counter compiler heap memory bug > allocating less than 10 Behaviour-'layers' at once
+	BehaviorConditional* pIsTired = new BehaviorConditional{ IsTired };
+	BehaviorAction* pTryRunning = new BehaviorAction{ TryRunning };
+	BehaviorAction* pChangeToFlee = new BehaviorAction{ ChangeToFlee };
+	BehaviorConditional* pHasFoundEnemyRunner = new BehaviorConditional{ HasFoundEnemyRunner };
+	BehaviorSequence* pFoundEnemyRunnerTryRunning = new BehaviorSequence{ {pHasFoundEnemyRunner, pTryRunning} };
+
+	//IF enemy visible AND has weapon AND has ammo AND if aiming DO shoot
+	BehaviorSequence* pHasWeaponHasAmmoDoRotateTryAimingAndOrShoot = new BehaviorSequence
+	{{
+		//AND IF has weapon
+		new BehaviorConditional{ HasWeaponInInventory },
+		//AND IF has ammo
+		new BehaviorConditional{ HasAmmoInCurrentWeapon },
+		//DO rotate (to get angle in between target)
+		new BehaviorAction{ RotateTowardsTargetInFOV },
+		//CHOOSE OR > IF aiming DO shoot OR DO rotate
+		new BehaviorSelector
+		{{
+			//IF aiming DO shoot
+			new BehaviorSequence
+			{{
+				new BehaviorConditional{ IsAimingAtTarget },
+				new BehaviorAction{ UseItem },
+			}},
+			//DO rotate (keep on rotating and prevent fleeing)
+			new BehaviorAction{ RotateTowardsTargetInFOV },
+		}},
+	}};
+
+	BehaviorSequence* pTryRunningAndFlee = new BehaviorSequence
+	{{
+		//CHOOSE OR > DO try running AND/OR DO flee
+		new BehaviorSelector
+		{{
+			//IF found enemy runner DO TRY running
+			pFoundEnemyRunnerTryRunning,
+			//AND OR DO flee
+			pChangeToFlee,
+		}}
+	}};
+
+	BehaviorSelector* pInventoryBehaviour = new BehaviorSelector
+	{{
+		//CHOOSE OR > IF hurt OR bitten AND has medkit DO use medkit
+		new BehaviorSequence
+		{{
+			//AND IF hurt OR bitten
+			new BehaviorSequence
+			{{
+				//OR > IF hurt OR bitten
+				new BehaviorSelector
+				{{
+					new BehaviorConditional{ IsHurt },
+					new BehaviorConditional{ IsBitten }
+				}}
+			}},
+			//AND has medkit
+			new BehaviorConditional{ HasMedkitInInventory },
+			//DO use medkit
+			new BehaviorAction{ UseItem },
+		}},
+		//OR > IF hungry AND has food DO use food
+		new BehaviorSequence
+		{{
+			new BehaviorConditional{ IsHungry },
+			new BehaviorConditional{ HasFoodInInventory },
+			new BehaviorAction{ UseItem },
+		}},
+		//OR > IF tired DO rest
+		new BehaviorSequence
+		{{
+			new BehaviorConditional{ IsTired },
+			new BehaviorAction{ ChangeToRest },
+		}},
+	}};
+
+	BehaviorSequence* pHouseExplorationBehaviour = new BehaviorSequence
+	{{
+		new BehaviorSelector
+		{{
+			//CHOOSE OR > (IF house not explored) DO explore current house
+			new BehaviorSequence
+			{{
+				//IF house NOT explored
+				new BehaviorConditional{ IsCurrentHouseNotExplored },
+				//DO explore house
+				new BehaviorAction{ ChangeToExploreHouseInFOV },
+			}},
+			//OR > IF house explored DO try to find house
+			new BehaviorSequence
+			{{
+				//IF house explored
+				new BehaviorConditional{ IsCurrentHouseExplored },
+				//DO find possible new house
+				new BehaviorAction{ TryFindDifferentHouseInFOV },
+					//could branch out and start exploring house if one found
+			}},
+		}}
+	}};
 
 	m_pBehaviourTree = new BehaviorTree{ pBlackboard,
 	new BehaviorSelector
@@ -50,52 +151,21 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 				//CHOOSE OR > DO CHECK fight/flight pickup item
 				new BehaviorSelector
 				{{
-					//CHOOSE OR > IF enemy
-					new BehaviorSelector
+					//IF entity is enemy
+					new BehaviorSequence
 					{{
-						//IF entity is enemy
-						new BehaviorSequence
+						new BehaviorConditional{ IsEnemyTargetInFOV },
+						//CHOOSE OR > check and shoot or rotate
+						new BehaviorSelector
 						{{
-							new BehaviorConditional{ IsEnemyTargetInFOV },
-							//CHOOSE OR > check and shoot or rotate
-							new BehaviorSelector
-							{{
-								//IF enemy visible AND has weapon AND has ammo AND if aiming DO shoot
-								new BehaviorSequence
-								{{
-									//AND IF has weapon
-									new BehaviorConditional{ HasWeaponInInventory },
-									//AND IF has ammo
-									new BehaviorConditional{ HasAmmoInCurrentWeapon },
-									//DO rotate
-									new BehaviorAction{ RotateTowardsTargetInFOV },
-									//CHOOSE OR > IF aiming DO shoot
-									new BehaviorSequence
-									{{
-										//IF aiming at target
-										pIsAimingAtTarget,
-										//DO shoot pistol
-										pUseItem,
-									}},
-								}},
-							}}
+							//IF enemy visible AND has weapon AND has ammo AND if aiming DO shoot
+							pHasWeaponHasAmmoDoRotateTryAimingAndOrShoot,
+
+							//OR > (AND has no weapon (OR has no ammo)))
+							//DO flee AND/OR try running
+							pTryRunningAndFlee,
 						}}
 					}},
-
-					//OR > DO flee (AND has no weapon (OR has no ammo)))
-					//new BehaviorSequence
-					//{{
-					//	//DO flee
-					//	new BehaviorAction{ ChangeToFlee },
-					//	//AND IF tired OR DO run
-					//	new BehaviorSelector
-					//	{{
-					//		//OR IF tired
-					//		new BehaviorConditional{ IsTired },
-					//		//OR (IF NOT tired) DO run
-					//		new BehaviorAction{ EnableRunning },
-					//	}}
-					//}},
 
 					//OR > IF found item DO seek item
 					new BehaviorSequence
@@ -112,57 +182,16 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 		}},
 
 		//OR > IF NO entities found
-		new BehaviorSelector
-		{{
-			//CHOOSE OR > IF hurt OR bitten AND has medkit DO use medkit
-			new BehaviorSequence
-			{{
-				//AND IF hurt OR bitten
-				new BehaviorSequence
-				{{
-					//OR > IF hurt OR bitten
-					new BehaviorSelector
-					{{
-						new BehaviorConditional{ IsHurt },
-						new BehaviorConditional{ IsBitten }
-					}}
-				}},
-				//AND has medkit
-				new BehaviorConditional{ HasMedkitInInventory },
-				//DO use medkit
-				new BehaviorAction{ UseItem },
-			}},
-			//OR > IF hungry AND has food DO use food
-			new BehaviorSequence
-			{{
-				new BehaviorConditional{ IsHungry },
-				new BehaviorConditional{ HasFoodInInventory },
-				new BehaviorAction{ UseItem },
-			}},
-			//OR > IF tired DO rest
-			new BehaviorSequence
-			{{
-				new BehaviorConditional{ IsTired },
-				new BehaviorAction{ ChangeToRest },
-			}},
-		}},
+		pInventoryBehaviour,
 
 		//OR > IF house found DO explore
-		//new BehaviorSequence
-		//{{
-		//	//IF found house
-		//	new BehaviorConditional{ HasFoundHouseTargetInFOV },
-		//	//AND 
-		//	//new BehaviorConditional{  },
-		//	//DO explore
-		//	new BehaviorAction{ ChangeToExploreHouseInFOV },
-		//}},
+		pHouseExplorationBehaviour,
 
 		//OR > DO seek (DEBUG)
-		//new BehaviorAction{ ChangeToSeekCurrentTarget },
+		new BehaviorAction{ ChangeToSeekCurrentTarget },
 
 		//OR > DO wander
-		//new BehaviorAction{ ChangeToWander }
+		new BehaviorAction{ ChangeToWander },
 	}}
 	}; //end of BT initialization
 }
@@ -272,6 +301,7 @@ void Plugin::Update(float dt)
 
 	//CheckEntitiesInFOV();
 
+	//DEBUG seek
 	EntityInfo test{};
 	test.Location = m_Target;
 	m_pBehaviourTree->GetBlackboard()->ChangeData("TargetEntity", test);

@@ -120,7 +120,8 @@ SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const El
 	const float angleBetween = Elite::Dot(agentLookAtDir, agentToTargetDir); // dot or angle between the 2 vectors (pos and neg results)
 	steering.AngularVelocity = agentInfo.MaxAngularSpeed * angleBetween; // speed * whatever signed amount we have
 
-	*angleToTarget = angleBetween;
+	if (angleToTarget)
+		*angleToTarget = angleBetween;
 	
 	//DEBUGRENDERER2D->DrawDirection(pAgent->GetPosition(),
 	//	agentLookAtDir,

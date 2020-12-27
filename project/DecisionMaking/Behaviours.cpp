@@ -26,6 +26,10 @@ BehaviorState ChangeToRest(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->ChangeData("Steering", SteeringPlugin_Output{}))
 		return Failure;
 
+	pBlackboard->ChangeData("TryRunning", false);
+
+	std::cout << "Rest\n";
+
 	return Success;
 }
 
@@ -39,6 +43,10 @@ BehaviorState ChangeToWander(Elite::Blackboard* pBlackboard)
 
 	if (!pBlackboard->ChangeData("Steering", CalculateWanderSteering(pInterface->Agent_GetInfo())))
 		return Failure;
+
+	UpdateRunning(pBlackboard);
+
+	std::cout << "Wander\n";
 
 	return Success;
 }
@@ -58,7 +66,11 @@ BehaviorState ChangeToFlee(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->ChangeData("Steering", CalculateFleeSteering(pInterface->Agent_GetInfo(), entityInfo.Location)))
 		return Failure;
 
-	return Success;
+	UpdateRunning(pBlackboard);
+
+	std::cout << "Flee\n";
+
+	return Running;
 }
 
 BehaviorState ChangeToSeekCurrentTarget(Elite::Blackboard* pBlackboard)
@@ -76,6 +88,10 @@ BehaviorState ChangeToSeekCurrentTarget(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->ChangeData("Steering", CalculateSeekSteering(pInterface->Agent_GetInfo(), entityInfo.Location)))
 		return Failure;
 
+	UpdateRunning(pBlackboard);
+
+	std::cout << "Seek\n";
+
 	return Success;
 }
 
@@ -91,34 +107,18 @@ BehaviorState ChangeToExploreHouseInFOV(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->GetData("TargetHouse", houseInfo))
 		return Failure;
 
-	//TODO:	anywhere, change target FROM middle of house WHEN in radius of house center
-	//		to NavGraph Closest Path point and continue following navgraph until item(s) found/zombies found
-	//		if agent finds nothing in FOV and is about 5.f away from the house's middle, begin exiting
+	AgentInfo agentInfo = pInterface->Agent_GetInfo();
+	if (agentInfo.Position.DistanceSquared(houseInfo.Center) < 5.f * 5.f)
+	{
+		pBlackboard->ChangeData("IsHouseExplored", true); //do not check for failure
+	}
 
 	if (!pBlackboard->ChangeData("Steering", CalculateSeekSteering(pInterface->Agent_GetInfo(), pInterface->NavMesh_GetClosestPathPoint(houseInfo.Center))))
 		return Failure;
 
-	return Success;
-}
+	UpdateRunning(pBlackboard);
 
-BehaviorState RotateTowardsTargetInFOV(Elite::Blackboard* pBlackboard)
-{
-	IExamInterface* pInterface{};
-	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
-
-	if (!isDataAvailable || !pInterface)
-		return Failure;
-
-	EntityInfo entityInfo;
-	if (!pBlackboard->GetData("TargetEntity", entityInfo))
-		return Failure;
-
-	float angleToTarget;
-	if (!pBlackboard->ChangeData("Steering", CalculateFaceSteering(pInterface->Agent_GetInfo(), entityInfo.Location, &angleToTarget)))
-		return Failure;
-
-	if (!pBlackboard->ChangeData("AngleToTarget", angleToTarget))
-		return Failure;
+	std::cout << "Explore\n";
 
 	return Success;
 }
@@ -168,20 +168,12 @@ BehaviorState UseItem(Elite::Blackboard* pBlackboard)
 	return Success;
 }
 
-BehaviorState EnableRunning(Elite::Blackboard* pBlackboard)
+BehaviorState TryRunning(Elite::Blackboard* pBlackboard)
 {
-	IExamInterface* pInterface{};
-	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
-
-	if (!isDataAvailable || !pInterface)
+	if (!pBlackboard->ChangeData("TryRunning", true))
 		return Failure;
 
-	SteeringPlugin_Output steering;
-	if (!pBlackboard->GetData("Steering", steering))
-		return Failure;
-
-	steering.RunMode = true;
-	return BehaviorState::Success;
+	return Success;
 }
 
 BehaviorState PickUpItem(Elite::Blackboard* pBlackboard)
@@ -235,6 +227,72 @@ BehaviorState PickUpItem(Elite::Blackboard* pBlackboard)
 	}
 
 	return Success;
+}
+
+BehaviorState RotateTowardsTargetInFOV(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return Failure;
+
+	EntityInfo entityInfo;
+	if (!pBlackboard->GetData("TargetEntity", entityInfo))
+		return Failure;
+
+	float angleToTarget;
+	if (!pBlackboard->ChangeData("Steering", CalculateFaceSteering(pInterface->Agent_GetInfo(), entityInfo.Location, &angleToTarget)))
+		return Failure;
+
+	if (!pBlackboard->ChangeData("AngleToTarget", angleToTarget))
+		return Failure;
+
+	std::cout << "Rotate\n";
+
+	return Success;
+}
+
+BehaviorState LookAround(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return Failure;
+
+	AgentInfo agentInfo = pInterface->Agent_GetInfo();
+
+	//- CCW + CW
+	const Elite::Vector2 behindAgent{ agentInfo.Position - Elite::Vector2{ cosf(agentInfo.Orientation - 180.f), sinf(agentInfo.Orientation - 180.f) } };
+	if (!pBlackboard->ChangeData("Steering", CalculateFaceSteering(pInterface->Agent_GetInfo(), behindAgent, nullptr)))
+		return Failure;
+
+	return Success;
+}
+
+BehaviorState TryFindDifferentHouseInFOV(Elite::Blackboard* pBlackboard)
+{
+	std::vector<HouseInfo> housesInFOV{};
+	if (!pBlackboard->GetData("HousesInFOV", housesInFOV))
+		return Failure;
+	
+	Elite::Vector2 formerCenter;
+	if (!pBlackboard->GetData("FormerHouseCenter", formerCenter))
+		return Failure;
+
+	for (const HouseInfo& houseInfo : housesInFOV)
+	{
+		if (!IsDifferentHouse(formerCenter, houseInfo)) //skip same house
+			continue;
+
+		pBlackboard->ChangeData("TargetHouse", houseInfo); //set target to entity of current interest
+		pBlackboard->ChangeData("IsHouseExplored", false); //set house to be unexplored
+		pBlackboard->ChangeData("FormerHouseCenter", houseInfo.Center); //set 'former' house center
+		return Success;
+	}
+
+	return Failure;
 }
 
 bool HasWeaponInInventory(Elite::Blackboard* pBlackboard)
@@ -304,11 +362,11 @@ bool IsAimingAtTarget(Elite::Blackboard* pBlackboard)
 
 	//if the angle is smaller than the margin, we're somewhat aiming at the set target
 	const Elite::Vector2 agentToTarget{ agentInfo.Position - entityInfo.Location };
-	float scaledMargin{ 5.f }; //default angular difference margin in degrees
+	float scaledMargin{ 7.5f }; //default angular difference margin in degrees
 	const float scale{ (abs(agentToTarget.Magnitude()) / 15.f) }; //scaled by distance to target (max distance from FOV is 15.f)
 	scaledMargin *= scale + scale * agentInfo.AgentSize;
-	//return abs(angleToTarget) > Elite::ToRadians(scaledMargin);
-	return abs(angleToTarget) < Elite::ToRadians(5.f);
+	return abs(angleToTarget) < Elite::ToRadians(scaledMargin);
+	//return abs(angleToTarget) < Elite::ToRadians(7.5f);
 }
 
 bool HasFoodInInventory(Elite::Blackboard* pBlackboard)
@@ -425,16 +483,6 @@ bool IsBitten(Elite::Blackboard* pBlackboard)
 
 bool HasFoundEntityTargetInFOV(Elite::Blackboard* pBlackboard)
 {
-	IExamInterface* pInterface{};
-	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
-
-	if (!isDataAvailable || !pInterface)
-		return false;
-
-	AgentInfo agentInfo = pInterface->Agent_GetInfo();
-	agentInfo.Position;
-
-	//data is untouched in between frames
 	std::vector<EntityInfo> entitiesInFOV{};
 	pBlackboard->GetData("EntitiesInFOV", entitiesInFOV);
 	for (const EntityInfo& entityInfo : entitiesInFOV)
@@ -448,21 +496,12 @@ bool HasFoundEntityTargetInFOV(Elite::Blackboard* pBlackboard)
 
 bool HasFoundHouseTargetInFOV(Elite::Blackboard* pBlackboard)
 {
-	IExamInterface* pInterface{};
-	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
-
-	if (!isDataAvailable || !pInterface)
-		return false;
-
-	AgentInfo agentInfo = pInterface->Agent_GetInfo();
-	agentInfo.Position;
-
-	//data is untouched in between frames
 	std::vector<HouseInfo> housesInFOV{};
 	pBlackboard->GetData("HousesInFOV", housesInFOV);
 	for (const HouseInfo& houseInfo : housesInFOV)
 	{
 		pBlackboard->ChangeData("TargetHouse", houseInfo); //set target to entity of current interest
+		pBlackboard->ChangeData("IsHouseExplored", false); //set house to be unexplored
 		return true;
 	}
 
@@ -471,24 +510,23 @@ bool HasFoundHouseTargetInFOV(Elite::Blackboard* pBlackboard)
 
 bool IsEnemyTargetInFOV(Elite::Blackboard* pBlackboard)
 {
-	IExamInterface* pInterface{};
-	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
-
-	if (!isDataAvailable || !pInterface)
-		return false;
-
-	//data is untouched in between frames
 	EntityInfo entityInfo;
 	if (!pBlackboard->GetData("TargetEntity", entityInfo))
 		return false;
 
-	if (entityInfo.Type == eEntityType::ENEMY)
-		return true;
-
-	return false;
+	return entityInfo.Type == eEntityType::ENEMY;
 }
 
 bool IsItemTargetInFOV(Elite::Blackboard* pBlackboard)
+{
+	EntityInfo entityInfo;
+	if (!pBlackboard->GetData("TargetEntity", entityInfo))
+		return false;
+
+	return entityInfo.Type == eEntityType::ITEM;
+}
+
+bool IsInHouse(Elite::Blackboard* pBlackboard)
 {
 	IExamInterface* pInterface{};
 	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
@@ -496,13 +534,60 @@ bool IsItemTargetInFOV(Elite::Blackboard* pBlackboard)
 	if (!isDataAvailable || !pInterface)
 		return false;
 
-	//data is untouched in between frames
-	EntityInfo entityInfo;
-	if (!pBlackboard->GetData("TargetEntity", entityInfo))
+	AgentInfo agentInfo = pInterface->Agent_GetInfo();
+
+	return agentInfo.IsInHouse;
+}
+
+bool IsCurrentHouseExplored(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
 		return false;
 
-	if (entityInfo.Type == eEntityType::ITEM)
-		return true;
+	bool isHouseExplored;
+	if (!pBlackboard->GetData("IsHouseExplored", isHouseExplored))
+		return false;
+
+	return isHouseExplored;
+}
+
+bool IsCurrentHouseNotExplored(Elite::Blackboard* pBlackboard)
+{
+	return !IsCurrentHouseExplored(pBlackboard);
+}
+
+bool HasFoundEnemyRunner(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return false;
+
+	EnemyInfo enemyInfo;
+	{
+		EntityInfo entityInfo;
+		pBlackboard->GetData("TargetEntity", entityInfo);
+		pInterface->Enemy_GetInfo(entityInfo, enemyInfo);
+		if (enemyInfo.Type == eEnemyType::ZOMBIE_RUNNER)
+			return true;
+	}
+
+	//data is untouched in between frames
+	std::vector<EntityInfo> entitiesInFOV{};
+	pBlackboard->GetData("EntitiesInFOV", entitiesInFOV);
+	for (const EntityInfo& entityInfo : entitiesInFOV)
+	{
+		if (entityInfo.Type == eEntityType::ENEMY)
+		{
+			pInterface->Enemy_GetInfo(entityInfo, enemyInfo);
+			if (enemyInfo.Type == eEnemyType::ZOMBIE_RUNNER)
+				return true;
+		}
+	}
 
 	return false;
 }
@@ -581,4 +666,27 @@ BehaviorState RemoveItemFromInventory(UINT slot, IExamInterface* pInterface, Eli
 
 	pBlackboard->ChangeData("FreeSlots", (UINT)bits.to_ulong());
 	return Success;
+}
+
+void UpdateRunning(Elite::Blackboard* pBlackboard)
+{
+	bool canRun;
+	if (!pBlackboard->GetData("TryRunning", canRun))
+		return;
+
+	IExamInterface* pInterface;
+	pBlackboard->GetData("Interface", pInterface);
+	pBlackboard->ChangeData("TryRunning", pInterface->Agent_GetInfo().Stamina <= 0.f);
+
+	SteeringPlugin_Output steering;
+	if (!pBlackboard->GetData("Steering", steering))
+		return;
+
+	steering.RunMode = canRun;
+	pBlackboard->ChangeData("Steering", steering);
+}
+
+bool IsDifferentHouse(const Elite::Vector2& formerCenter, const HouseInfo& houseInfo)
+{
+	return formerCenter != houseInfo.Center;
 }
