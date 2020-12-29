@@ -2,15 +2,17 @@
 #include "stdafx.h"
 
 //Includes
+#include <Exam_HelperStructs.h>
 #include "SteeringBehaviors.h"
-//#include <EliteMath/EMath.h>
+#include <EliteMath/EMath.h>
+#include "SteeringHelpers.h"
 
 //////////////////////////
 //SEEK
 //****
-SteeringPlugin_Output CalculateSeekSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateSeekSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 	
 	steering.LinearVelocity = target - agentInfo.Position;
 	steering.LinearVelocity.Normalize();
@@ -21,9 +23,16 @@ SteeringPlugin_Output CalculateSeekSteering(const AgentInfo& agentInfo, const El
 	return steering;
 }
 
+SteeringPlugin_OutputCustom CalculateSeekSteeringData(const AgentInfo& agentInfo, const Elite::Vector2& target, const CustomSteeringData& data)
+{
+	return CalculateSeekSteering(agentInfo, target);
+}
+
+static Elite::Vector2 WanderTarget = {};
+
 //WANDER (base> SEEK)
 //******
-SteeringPlugin_Output CalculateWanderSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float offset, float radius, float maxJitterOffset)
+SteeringPlugin_OutputCustom CalculateWanderSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float offset, float radius, float maxJitterOffset)
 {
 	// calculate random point on circle
 	const float halfJitter = maxJitterOffset / 2;
@@ -50,9 +59,14 @@ SteeringPlugin_Output CalculateWanderSteering(const AgentInfo& agentInfo, const 
 	return CalculateSeekSteering(agentInfo, newTarget);
 }
 
+SteeringPlugin_OutputCustom CalculateWanderSteeringData(const AgentInfo& agentInfo, const Elite::Vector2& target, const CustomSteeringData& data)
+{
+	return CalculateWanderSteering(agentInfo, target, data.paramX, data.paramY, data.radius);
+}
+
 //FLEE (base> SEEK)
 //******
-SteeringPlugin_Output CalculateFleeSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateFleeSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float turnSpeed)
 {
 	//m_Target.Position = -m_Target.Position;
 	//return Seek::CalculateSteering(deltaT, pAgent);
@@ -61,12 +75,15 @@ SteeringPlugin_Output CalculateFleeSteering(const AgentInfo& agentInfo, const El
 	//SteeringOutput steering{ Seek::CalculateSteering(deltaT, pAgent) };
 	//steering.LinearVelocity = -steering.LinearVelocity;
 
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	//opposite of Seek
 	steering.LinearVelocity = agentInfo.Position - target;
 	steering.LinearVelocity.Normalize();
 	steering.LinearVelocity *= agentInfo.MaxLinearSpeed;
+
+	steering.AutoOrient = false; //stop auto-looking away
+	steering.AngularVelocity = turnSpeed; //start turning away
 
 	//DEBUGRENDERER2D->DrawDirection(agentInfo.Position, steering.LinearVelocity, 5, { 0, 1, 0 }, 0.4f);
 
@@ -75,9 +92,9 @@ SteeringPlugin_Output CalculateFleeSteering(const AgentInfo& agentInfo, const El
 
 //ARRIVE
 //******
-SteeringPlugin_Output CalculateArriveSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float arrivalRadius, float slowRadius)
+SteeringPlugin_OutputCustom CalculateArriveSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float arrivalRadius, float slowRadius)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	Elite::Vector2 toTarget{ target - agentInfo.Position };
 	const float distance = toTarget.Normalize();
@@ -108,9 +125,9 @@ SteeringPlugin_Output CalculateArriveSteering(const AgentInfo& agentInfo, const 
 
 //FACE
 //******
-SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float* angleToTarget)
+SteeringPlugin_OutputCustom CalculateFaceSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, float* angleToTarget)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 	steering.AutoOrient = false;
 
 	const float orientation = agentInfo.Orientation; // X-value-orientation, !used for cos and sin!
@@ -140,12 +157,12 @@ SteeringPlugin_Output CalculateFaceSteering(const AgentInfo& agentInfo, const El
 
 //EVADE (base> FLEE)
 //****
-SteeringPlugin_Output CalculateEvadeSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, const Elite::Vector2& targetLinVel, float safeDistance)
+SteeringPlugin_OutputCustom CalculateEvadeSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, const Elite::Vector2& targetLinVel, float safeDistance)
 {
 	const float distanceToTarget = Elite::Distance(agentInfo.Position, target);
 	if (distanceToTarget > safeDistance)
 	{
-		SteeringPlugin_Output steering{};
+		SteeringPlugin_OutputCustom steering{};
 		//steering.IsValid = false;
 		return steering;
 	}
@@ -157,7 +174,7 @@ SteeringPlugin_Output CalculateEvadeSteering(const AgentInfo& agentInfo, const E
 
 //PURSUIT (base> SEEK)
 //****
-SteeringPlugin_Output CalculatePursuitSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, const Elite::Vector2& targetLinVel)
+SteeringPlugin_OutputCustom CalculatePursuitSteering(const AgentInfo& agentInfo, const Elite::Vector2& target, const Elite::Vector2& targetLinVel)
 {
 	Elite::Vector2 newTarget = target + targetLinVel.GetNormalized() * agentInfo.MaxLinearSpeed;
 	return CalculateSeekSteering(agentInfo, newTarget);
@@ -165,45 +182,45 @@ SteeringPlugin_Output CalculatePursuitSteering(const AgentInfo& agentInfo, const
 
 //HIDE
 //****
-SteeringPlugin_Output CalculateHideSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateHideSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	return steering;
 }
 
 //AVOIDOBSTACLE
 //****
-SteeringPlugin_Output CalculateAvoidObstacleSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateAvoidObstacleSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	return steering;
 }
 
 //ALIGN
 //****
-SteeringPlugin_Output CalculateAlignSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateAlignSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	return steering;
 }
 
 //FACEDARRIVE
 //****
-SteeringPlugin_Output CalculateFacedArriveSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateFacedArriveSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	return steering;
 }
 
 //SLOWCLAP
 //****
-SteeringPlugin_Output CalculateSlowClapSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
+SteeringPlugin_OutputCustom CalculateSlowClapSteering(const AgentInfo& agentInfo, const Elite::Vector2& target)
 {
-	SteeringPlugin_Output steering{};
+	SteeringPlugin_OutputCustom steering{};
 
 	return steering;
 }

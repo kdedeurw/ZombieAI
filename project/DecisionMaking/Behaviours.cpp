@@ -2,6 +2,7 @@
 #include "Behaviours.h"
 
 #include <bitset>
+#include <iostream>
 
 //includes
 #include "EBlackboard.h"
@@ -10,6 +11,8 @@
 #include "Exam_HelperStructs.h"
 #include <EliteMath/EMath.h>
 #include "../Steering/SteeringBehaviors.h"
+#include "../Steering/Combined/CombinedSteeringBehaviors.h"
+#include "../Steering/SteeringHelpers.h"
 
 using namespace Elite;
 
@@ -23,7 +26,7 @@ BehaviorState ChangeToRest(Elite::Blackboard* pBlackboard)
 	if (!isDataAvailable || !pInterface)
 		return Failure;
 
-	if (!pBlackboard->ChangeData("Steering", SteeringPlugin_Output{}))
+	if (!pBlackboard->ChangeData("Steering", SteeringPlugin_OutputCustom{}))
 		return Failure;
 
 	pBlackboard->ChangeData("TryRunning", false);
@@ -63,7 +66,7 @@ BehaviorState ChangeToFlee(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->GetData("TargetEntity", entityInfo))
 		return Failure;
 
-	if (!pBlackboard->ChangeData("Steering", CalculateFleeSteering(pInterface->Agent_GetInfo(), entityInfo.Location)))
+	if (!pBlackboard->ChangeData("Steering", CalculateFleeSteering(pInterface->Agent_GetInfo(), pInterface->NavMesh_GetClosestPathPoint(entityInfo.Location))))
 		return Failure;
 
 	UpdateRunning(pBlackboard);
@@ -85,7 +88,7 @@ BehaviorState ChangeToSeekCurrentTarget(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->GetData("TargetEntity", entityInfo))
 		return Failure;
 
-	if (!pBlackboard->ChangeData("Steering", CalculateSeekSteering(pInterface->Agent_GetInfo(), entityInfo.Location)))
+	if (!pBlackboard->ChangeData("Steering", CalculateSeekSteering(pInterface->Agent_GetInfo(), pInterface->NavMesh_GetClosestPathPoint(entityInfo.Location))))
 		return Failure;
 
 	UpdateRunning(pBlackboard);
@@ -119,6 +122,31 @@ BehaviorState ChangeToExploreHouseInFOV(Elite::Blackboard* pBlackboard)
 	UpdateRunning(pBlackboard);
 
 	std::cout << "Explore\n";
+
+	return Success;
+}
+
+Elite::BehaviorState ChangeToBlendedWanderSeek(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return Failure;
+
+	std::vector<WeightedBehaviour> weightedBehaviours{};
+	weightedBehaviours.push_back(WeightedBehaviour{ CalculateSeekSteeringData, 0.f });
+	weightedBehaviours.push_back(WeightedBehaviour{ CalculateWanderSteeringData, 1.f });
+
+	CustomSteeringData data{};
+	data.paramX = 6.f;
+	data.paramY = 4.f;
+	data.radius = 1.f;
+
+	if (!pBlackboard->ChangeData("Steering", CalculateBlendedSteering(pInterface->Agent_GetInfo(), Elite::Vector2{ 0.f, 0.f }, data, weightedBehaviours)))
+		return Failure;
+
+	std::cout << "BlendedWanderSeek\n";
 
 	return Success;
 }
@@ -248,7 +276,7 @@ BehaviorState RotateTowardsTargetInFOV(Elite::Blackboard* pBlackboard)
 	if (!pBlackboard->ChangeData("AngleToTarget", angleToTarget))
 		return Failure;
 
-	std::cout << "Rotate\n";
+	std::cout << "RotateTowards\n";
 
 	return Success;
 }
@@ -265,7 +293,7 @@ BehaviorState LookAround(Elite::Blackboard* pBlackboard)
 
 	//- CCW + CW
 	const Elite::Vector2 behindAgent{ agentInfo.Position - Elite::Vector2{ cosf(agentInfo.Orientation - 180.f), sinf(agentInfo.Orientation - 180.f) } };
-	if (!pBlackboard->ChangeData("Steering", CalculateFaceSteering(pInterface->Agent_GetInfo(), behindAgent, nullptr)))
+	if (!pBlackboard->ChangeData("Steering", CalculateFaceSteering(agentInfo, behindAgent, nullptr)))
 		return Failure;
 
 	return Success;
@@ -293,6 +321,70 @@ BehaviorState TryFindDifferentHouseInFOV(Elite::Blackboard* pBlackboard)
 	}
 
 	return Failure;
+}
+
+BehaviorState AddRotationTowardsTargetInFOV(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return Failure;
+
+	EntityInfo entityInfo;
+	if (!pBlackboard->GetData("TargetEntity", entityInfo))
+		return Failure;
+
+	SteeringPlugin_OutputCustom currentSteering;
+	if (!pBlackboard->GetData("Steering", currentSteering))
+		return Failure;
+
+	float angleToTarget;
+	SteeringPlugin_OutputCustom steering = CalculateFaceSteering(pInterface->Agent_GetInfo(), entityInfo.Location, &angleToTarget);
+
+	steering.LinearVelocity = currentSteering.LinearVelocity; //save current velocity
+	if (!pBlackboard->ChangeData("Steering", steering))
+		return Failure;
+
+	if (!pBlackboard->ChangeData("AngleToTarget", angleToTarget))
+		return Failure;
+
+	std::cout << "AddRotationTowards\n";
+
+	return Success;
+}
+
+BehaviorState AddRotationFromTargetInFOV(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return Failure;
+
+	EntityInfo entityInfo;
+	if (!pBlackboard->GetData("TargetEntity", entityInfo))
+		return Failure;
+
+	SteeringPlugin_OutputCustom currentSteering;
+	if (!pBlackboard->GetData("Steering", currentSteering))
+		return Failure;
+
+	float angleToTarget;
+	SteeringPlugin_OutputCustom steering = CalculateFaceSteering(pInterface->Agent_GetInfo(), entityInfo.Location, &angleToTarget);
+
+	steering.LinearVelocity = currentSteering.LinearVelocity; //save current velocity
+	//TODO: make sure the agent looks away faster when looking directly at an enemy agent
+	steering.AngularVelocity = -steering.AngularVelocity; //flip current angular velocity
+	if (!pBlackboard->ChangeData("Steering", steering))
+		return Failure;
+
+	if (!pBlackboard->ChangeData("AngleToTarget", angleToTarget))
+		return Failure;
+
+	std::cout << "AddRotationFrom\n";
+
+	return Success;
 }
 
 bool HasWeaponInInventory(Elite::Blackboard* pBlackboard)
@@ -592,6 +684,66 @@ bool HasFoundEnemyRunner(Elite::Blackboard* pBlackboard)
 	return false;
 }
 
+bool HasFoundPurgeZone(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return false;
+
+	EntityInfo entityInfo;
+	pBlackboard->GetData("TargetEntity", entityInfo);
+	PurgeZoneInfo purgeZoneInfo;
+	pInterface->PurgeZone_GetInfo(entityInfo, purgeZoneInfo);
+
+	return entityInfo.Type == eEntityType::PURGEZONE;
+}
+
+bool IsInPurgeZone(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return false;
+
+	EntityInfo entityInfo;
+	if (!pBlackboard->ChangeData("TargetEntity", entityInfo))
+		return false;
+
+	PurgeZoneInfo purgeZoneInfo;
+	pInterface->PurgeZone_GetInfo(entityInfo, purgeZoneInfo);
+
+	AgentInfo agentInfo = pInterface->Agent_GetInfo();
+
+	//if distance between center of zone and agent is bigger than the radius, agent is not in it
+	return Elite::DistanceSquared(agentInfo.Position, purgeZoneInfo.Center) > purgeZoneInfo.Radius * purgeZoneInfo.Radius;
+}
+
+bool IsPurgeZoneDanger(Elite::Blackboard* pBlackboard)
+{
+	IExamInterface* pInterface{};
+	bool isDataAvailable = pBlackboard->GetData("Interface", pInterface);
+
+	if (!isDataAvailable || !pInterface)
+		return false;
+
+	EntityInfo entityInfo;
+	pBlackboard->GetData("TargetEntity", entityInfo);
+
+	if (entityInfo.Type != eEntityType::PURGEZONE)
+		return false;
+
+	PurgeZoneInfo purgeZoneInfo;
+	pInterface->PurgeZone_GetInfo(entityInfo, purgeZoneInfo);
+
+	AgentInfo agentInfo = pInterface->Agent_GetInfo();
+
+	//if distance between center of zone and agent is bigger than the radius, agent is not in it
+	return Elite::DistanceSquared(agentInfo.Position, purgeZoneInfo.Center) < purgeZoneInfo.Radius * purgeZoneInfo.Radius;
+}
+
 //MISCELLANEOUS
 
 //Redundant
@@ -678,7 +830,7 @@ void UpdateRunning(Elite::Blackboard* pBlackboard)
 	pBlackboard->GetData("Interface", pInterface);
 	pBlackboard->ChangeData("TryRunning", pInterface->Agent_GetInfo().Stamina <= 0.f);
 
-	SteeringPlugin_Output steering;
+	SteeringPlugin_OutputCustom steering;
 	if (!pBlackboard->GetData("Steering", steering))
 		return;
 

@@ -6,6 +6,7 @@
     <ClCompile Include="Steering\SteeringBehaviors.cpp" />
     <ClCompile Include="DecisionMaking\EBehaviourTree.cpp" />
     <ClCompile Include="DecisionMaking\Behaviours.cpp" />
+    <ClCompile Include="Steering\Combined\CombinedSteeringBehaviors.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Plugin.h" />
@@ -15,5 +16,7 @@
     <ClInclude Include="DecisionMaking\Behaviours.h" />
     <ClInclude Include="DecisionMaking\EBlackboard.h" />
     <ClInclude Include="DecisionMaking\EBehaviourTree.h" />
+    <ClInclude Include="Steering\Combined\CombinedSteeringBehaviors.h" />
+    <ClInclude Include="Steering\SteeringHelpers.h" />
   </ItemGroup>
 </Project>

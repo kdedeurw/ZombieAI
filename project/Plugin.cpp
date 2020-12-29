@@ -4,6 +4,9 @@
 //#include "DecisionMaking/EBlackboard.h"
 #include "DecisionMaking/EBehaviourTree.h"
 #include "DecisionMaking/Behaviours.h"
+#include "Steering/SteeringBehaviors.h"
+#include "Steering/Combined/CombinedSteeringBehaviors.h"
+#include "Steering/SteeringHelpers.h"
 
 using namespace Elite;
 
@@ -23,7 +26,7 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 
 	Blackboard* pBlackboard = new Blackboard{};
 	pBlackboard->AddData("Interface", m_pInterface);
-	pBlackboard->AddData("Steering", SteeringPlugin_Output{});
+	pBlackboard->AddData("Steering", SteeringPlugin_OutputCustom{});
 	pBlackboard->AddData("TargetEntity", EntityInfo{});
 	pBlackboard->AddData("TargetHouse", HouseInfo{});
 	pBlackboard->AddData("FreeSlots", UINT{}); //memory optimisation isn't possible since padding will happen and we're not storing the values
@@ -35,17 +38,23 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 	pBlackboard->AddData("TryRunning", bool{});
 	pBlackboard->AddData("FormerHouseCenter", Elite::Vector2{ -1.f, -1.f }); //make sure former center != TargetHouse.center
 
-	//To counter compiler heap memory bug > allocating less than 10 Behaviour-'layers' at once
-	BehaviorConditional* pIsTired = new BehaviorConditional{ IsTired };
-	BehaviorAction* pTryRunning = new BehaviorAction{ TryRunning };
-	BehaviorAction* pChangeToFlee = new BehaviorAction{ ChangeToFlee };
-	BehaviorConditional* pHasFoundEnemyRunner = new BehaviorConditional{ HasFoundEnemyRunner };
-	BehaviorSequence* pFoundEnemyRunnerTryRunning = new BehaviorSequence{ {pHasFoundEnemyRunner, pTryRunning} };
+	//IF entity is purgezone AND IF inside DO flee
+	BehaviorSequence* pEscapeIfPurgeZone = new BehaviorSequence
+	{{
+		//IF found purgezone
+		//new BehaviorConditional{ HasFoundPurgeZone },
+		////AND IF in purgezone
+		//new BehaviorConditional{ IsInPurgeZone },
+		//IF in found purgezone
+		new BehaviorConditional{ IsPurgeZoneDanger },
+		//DO flee
+		new BehaviorAction{ ChangeToFlee },
+	}};
 
 	//IF enemy visible AND has weapon AND has ammo AND if aiming DO shoot
 	BehaviorSequence* pHasWeaponHasAmmoDoRotateTryAimingAndOrShoot = new BehaviorSequence
 	{{
-		//AND IF has weapon
+		//IF has weapon
 		new BehaviorConditional{ HasWeaponInInventory },
 		//AND IF has ammo
 		new BehaviorConditional{ HasAmmoInCurrentWeapon },
@@ -60,7 +69,7 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 				new BehaviorConditional{ IsAimingAtTarget },
 				new BehaviorAction{ UseItem },
 			}},
-			//DO rotate (keep on rotating and prevent fleeing)
+			//(ELSE) DO rotate (keep on rotating and prevent fleeing)
 			new BehaviorAction{ RotateTowardsTargetInFOV },
 		}},
 	}};
@@ -71,9 +80,13 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 		new BehaviorSelector
 		{{
 			//IF found enemy runner DO TRY running
-			pFoundEnemyRunnerTryRunning,
+			new BehaviorSequence
+			{{
+				new BehaviorConditional{ HasFoundEnemyRunner },
+				new BehaviorAction{ TryRunning }
+			}},
 			//AND OR DO flee
-			pChangeToFlee,
+			new BehaviorAction{ ChangeToFlee },
 		}}
 	}};
 
@@ -136,12 +149,28 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 		}}
 	}};
 
+	BehaviorSequence* pTryRunningAndRotate = new BehaviorSequence
+	{{
+		//CHOOSE OR > DO try running AND/OR DO rotate
+		new BehaviorSelector
+		{{
+			//IF is bitten DO TRY running
+			new BehaviorSequence
+			{{
+				new BehaviorConditional{ IsBitten },
+				new BehaviorAction{ TryRunning }
+			}},
+			//AND OR DO rotate (keep current momentum)
+			new BehaviorAction{ AddRotationFromTargetInFOV },
+		}}
+	}};
+
 	m_pBehaviourTree = new BehaviorTree{ pBlackboard,
 	new BehaviorSelector
 	{{
 		//CHOOSE OR > GLOBAL
-		new BehaviorSelector
-		{{
+		//new BehaviorSelector
+		//{{
 			//CHOOSE OR > IF found entity
 			new BehaviorSequence
 			{{
@@ -151,6 +180,9 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 				//CHOOSE OR > DO CHECK fight/flight pickup item
 				new BehaviorSelector
 				{{
+					//AND IF entity is purgezone AND IF inside DO flee
+					pEscapeIfPurgeZone,
+
 					//IF entity is enemy
 					new BehaviorSequence
 					{{
@@ -163,7 +195,9 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 
 							//OR > (AND has no weapon (OR has no ammo)))
 							//DO flee AND/OR try running
-							pTryRunningAndFlee,
+							//pTryRunningAndFlee,
+							//DO run and DO rotate
+							pTryRunningAndRotate,
 						}}
 					}},
 
@@ -178,7 +212,7 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 						new BehaviorAction{ PickUpItem },
 					}}
 				}}
-			}}
+			//}}
 		}},
 
 		//OR > IF NO entities found
@@ -188,6 +222,7 @@ void Plugin::Initialize(IBaseInterface* pInterface, PluginInfo& info)
 		pHouseExplorationBehaviour,
 
 		//OR > DO seek (DEBUG)
+		//new BehaviorAction{ ChangeToBlendedWanderSeek },
 		new BehaviorAction{ ChangeToSeekCurrentTarget },
 
 		//OR > DO wander
@@ -220,7 +255,8 @@ void Plugin::InitGameDebugParams(GameDebugParams& params)
 	params.AutoGrabClosestItem = true; //A call to Item_Grab(...) returns the closest item that can be grabbed. (EntityInfo argument is ignored)
 	
 	//params.StartingDifficultyStage = 3;
-	params.SpawnDebugPistol = true;
+	//params.SpawnDebugPistol = true;
+	params.SpawnPurgeZonesOnMiddleClick = true;
 }
 
 //Only Active in DEBUG Mode
@@ -323,9 +359,9 @@ SteeringPlugin_Output Plugin::UpdateSteering(float dt)
 	m_pBehaviourTree->Update(dt);
 
 	//Set final steering
-	SteeringPlugin_Output steering; //autoOrient is default set to true
+	SteeringPlugin_OutputCustom steering; //autoOrient is default set to true
 	if (!m_pBehaviourTree->GetBlackboard()->GetData("Steering", steering))
-		steering = SteeringPlugin_Output{};
+		steering = SteeringPlugin_OutputCustom{};
 
 	return steering;
 }

@@ -188,7 +188,9 @@
     <ClInclude Include="DecisionMaking\EBehaviourTree.h" />
     <ClInclude Include="Plugin.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="Steering\Combined\CombinedSteeringBehaviors.h" />
     <ClInclude Include="Steering\SteeringBehaviors.h" />
+    <ClInclude Include="Steering\SteeringHelpers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DecisionMaking\Behaviours.cpp" />
@@ -198,6 +200,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Steering\Combined\CombinedSteeringBehaviors.cpp" />
     <ClCompile Include="Steering\SteeringBehaviors.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

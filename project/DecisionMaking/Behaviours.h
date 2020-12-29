@@ -21,6 +21,8 @@ Elite::BehaviorState ChangeToFlee(Elite::Blackboard* pBlackboard);
 Elite::BehaviorState ChangeToSeekCurrentTarget(Elite::Blackboard* pBlackboard);
 //Agent will try to explore target HouseInfo and set IsExplored to true when near its center
 Elite::BehaviorState ChangeToExploreHouseInFOV(Elite::Blackboard* pBlackboard);
+//Agent will blend wandering and seeking target
+Elite::BehaviorState ChangeToBlendedWanderSeek(Elite::Blackboard* pBlackboard);
 
 //ACTION STATES
 
@@ -30,12 +32,16 @@ Elite::BehaviorState UseItem(Elite::Blackboard* pBlackboard);
 Elite::BehaviorState TryRunning(Elite::Blackboard* pBlackboard);
 //Agent will try to pick up designated item
 Elite::BehaviorState PickUpItem(Elite::Blackboard* pBlackboard);
-//Agent will rotate itself towards set
+//Agent will rotate itself towards set target
 Elite::BehaviorState RotateTowardsTargetInFOV(Elite::Blackboard* pBlackboard);
 //Agent will randomly look around them to try and spot something (CCW)
 Elite::BehaviorState LookAround(Elite::Blackboard* pBlackboard);
 //Agent will look for house in FOV
 Elite::BehaviorState TryFindDifferentHouseInFOV(Elite::Blackboard* pBlackboard);
+//Agent will rotate towards set target without stopping its current velocity
+Elite::BehaviorState AddRotationTowardsTargetInFOV(Elite::Blackboard* pBlackboard);
+//Agent will rotate away from set target without stopping its current velocity
+Elite::BehaviorState AddRotationFromTargetInFOV(Elite::Blackboard* pBlackboard);
 
 //CONDITIONS
 
@@ -72,6 +78,12 @@ bool IsCurrentHouseExplored(Elite::Blackboard* pBlackboard);
 bool IsCurrentHouseNotExplored(Elite::Blackboard* pBlackboard);
 
 bool HasFoundEnemyRunner(Elite::Blackboard* pBlackboard);
+//Deprecated: If agent has found an entity in its FOV, check if it's of type PurgeZone
+bool HasFoundPurgeZone(Elite::Blackboard* pBlackboard);
+//Deprecated: if agent has found target entity of type PurgeZone
+bool IsInPurgeZone(Elite::Blackboard* pBlackboard);
+//Purgezone escape wrapper
+bool IsPurgeZoneDanger(Elite::Blackboard* pBlackboard);
 
 //MISCELLANEOUS
 
